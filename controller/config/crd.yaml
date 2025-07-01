@@ -60,7 +60,7 @@ spec:
                 pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
                 type: string
               interface:
-                description: interface to route through
+                description: Interface to route through
                 pattern: ^[a-zA-Z0-9-_.]+$
                 type: string
               multipath:

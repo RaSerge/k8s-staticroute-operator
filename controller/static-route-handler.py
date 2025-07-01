@@ -87,14 +87,14 @@ def manage_static_route(name, operation, destination, gateway=None, interface=No
                 gw_ip = route_gw
 
             # Check if destination/gateway IP address/CIDR is valid for each path
-            if not valid_ip_address(destination) or not valid_ip_address(gw_ip):
+            if not interface and (not valid_ip_address(destination) or not valid_ip_address(gw_ip)):
                 message = f"Invalid IP address specified for route - dest: {destination}, gateway: {gw_ip}!"
                 if logger is not None:
                         logger.error(message)
                 return (False, message)
     else:
     	# Check if destination/gateway IP address/CIDR is valid first
-    	if not valid_ip_address(destination) or not valid_ip_address(gateway):
+    	if not interface and (not valid_ip_address(destination) or not valid_ip_address(gateway)):
             message = f"Invalid IP address specified for route - dest: {destination}, gateway: {gateway}!"
             if logger is not None:
                 logger.error(message)

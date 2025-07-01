@@ -151,8 +151,10 @@ def get_routing_status():
     try:
         with IPRoute() as ipr:
             # Get all interface names for index-to-name mapping
-            links = {idx: attr['IFLA_IFNAME']
-                    for idx, attr in dict(ipr.get_links()).items()}
+            links = {
+                link['index']: link.get_attr('IFLA_IFNAME')
+                for link in ipr.get_links()
+            }
 
             for route in ipr.get_routes(family=AF_INET, table=60):
                 route_info = {
@@ -163,21 +165,26 @@ def get_routing_status():
                 }
 
                 # Handle destination
-                if 'dst_len' in route:
-                    dst = route.get_attr('RTA_DST')
-                    if dst:
-                        route_info['destination'] = (
-                            dst if route['dst_len'] == 32
-                            else f"{dst}/{route['dst_len']}"
-                        )
+                dst = route.get_attr('RTA_DST')
+                if dst:
+                    route_info['destination'] = (
+                        dst if route.get('dst_len', 32) == 32
+                        else f"{dst}/{route['dst_len']}"
+                    )
+
+                # Skip if no destination
+                if not route_info['destination']:
+                    continue
 
                 # Handle multipath routes
                 if route.get_attr('RTA_MULTIPATH'):
-                    route_info['multipath'] = sorted(
-                        path.get_attr('RTA_GATEWAY')
-                        for path in route.get_attr('RTA_MULTIPATH')
-                        if path.get_attr('RTA_GATEWAY')
-                    )
+                    multipath = []
+                    for path in route.get_attr('RTA_MULTIPATH'):
+                        gw = path.get_attr('RTA_GATEWAY')
+                        if gw:
+                            multipath.append(gw)
+                    if multipath:
+                        route_info['multipath'] = sorted(multipath)
 
                 # Handle single gateway or interface routes
                 if not route_info['multipath']:
@@ -186,12 +193,8 @@ def get_routing_status():
                     if oif and oif in links:
                         route_info['interface'] = links[oif]
 
-                # Only include valid routes with destination
-                if route_info['destination'] and (
-                    route_info['gateway'] or
-                    route_info['interface'] or
-                    route_info['multipath']
-                ):
+                # Only include valid routes with a next-hop
+                if route_info['gateway'] or route_info['interface'] or route_info['multipath']:
                     # Remove None values from the dict
                     result_routes.append(
                         {k: v for k, v in route_info.items() if v is not None}
@@ -202,7 +205,7 @@ def get_routing_status():
 
     except Exception as ex:
         logging.error(f"Failed to get routing status: {str(ex)}")
-        raise  # Re-raise to let caller handle the error
+        return []  # Return empty list instead of crashing
 
 def list_remove(left,right):
     result_list=[]
