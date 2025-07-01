@@ -15,8 +15,6 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - operator: Exists
-      imagePullSecrets:
-        - name: <PULL_SECRET_NAME>
       initContainers:
         - name: init-network
           image: <CONTAINER_REGISTRY>/k8s-staticroute-operator:<OPERATOR_RELEASE>
@@ -37,7 +35,7 @@ spec:
             requests:
               memory: "100Mi"
             limits:
-              memory: "150Mi"
+              memory: "256Mi"
           securityContext:
             capabilities:
               add:

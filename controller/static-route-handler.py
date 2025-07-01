@@ -60,11 +60,15 @@ def apply_operation(data,operation,logger=None):
                 logger.error(f'Failed calling API {e}')
     return is_success
 
-def manage_static_route(name, operation, destination, gateway=None, multipath=None,selector=None,logger=None):
+def manage_static_route(name, operation, destination, gateway=None, interface=None, multipath=None,selector=None,logger=None):
     operation_success = False
+    is_interface = False
     is_multipath = False
     message = ""
-    
+
+    if isinstance(interface, str):
+        is_interface = True
+
     if isinstance(multipath, list):
         is_multipath = True
 
@@ -89,7 +93,6 @@ def manage_static_route(name, operation, destination, gateway=None, multipath=No
                         logger.error(message)
                 return (False, message)
     else:
-
     	# Check if destination/gateway IP address/CIDR is valid first
     	if not valid_ip_address(destination) or not valid_ip_address(gateway):
             message = f"Invalid IP address specified for route - dest: {destination}, gateway: {gateway}!"
@@ -111,6 +114,8 @@ def manage_static_route(name, operation, destination, gateway=None, multipath=No
     data = {}
     if is_multipath:
         data = {"rule_set":name,"destination":destination,"multipath":multipath}
+    elif is_interface:
+         data = {"rule_set":name,"destination":destination,"interface":interface}
     else:
         data = {"rule_set":name,"destination":destination,"gateway":gateway}
 
@@ -118,10 +123,9 @@ def manage_static_route(name, operation, destination, gateway=None, multipath=No
         data["selector"] = selector["operation"]
         data["selector_key"] = selector["key"]
         data["selector_value"] = selector["values"]
-    apply_operation(operation=operation,data=data,logger=logger) 
+    apply_operation(operation=operation,data=data,logger=logger)
     operation_success = True
-    
-        
+
 
     return (operation_success, message)
 
@@ -135,6 +139,7 @@ def process_static_routes(name, routes, operation,event_ctx=None, logger=None):
             operation=operation,
             destination=route["destination"],
             gateway=route["gateway"],
+            interface=route["interface"],
             multipath=route["multipath"],
             selector=route["selector"],
             logger=logger,
@@ -146,6 +151,7 @@ def process_static_routes(name, routes, operation,event_ctx=None, logger=None):
                     "name": name,
                     "destination": route["destination"],
                     "gateway": route["gateway"],
+                    "interface":route["interface"],
                     "multipath": route["multipath"],
                     "selector": route["selector"],
                     "status": ROUTE_NOT_READY_MSG,
@@ -164,6 +170,7 @@ def process_static_routes(name, routes, operation,event_ctx=None, logger=None):
                 "name": name,
                 "destination": route["destination"],
                 "gateway": route["gateway"],
+                "interface":route["interface"],
                 "multipath": route["multipath"],
                 "selector": route["selector"],
                 "status": ROUTE_READY_MSG,
@@ -192,8 +199,9 @@ def create_fn(name, body, spec, logger, **_):
     selector = spec.get("nodeSelector", None)
     multipath = spec.get("multipath", None)
     gateway = spec.get("gateway", None)
+    interface = spec.get("interface", None)
     routes_to_add_spec = [
-        {"destination": destination, "gateway": gateway, "multipath": multipath, "selector":selector} for destination in destinations
+        {"destination": destination, "gateway": gateway, "interface": interface, "multipath": multipath, "selector":selector} for destination in destinations
     ]
 
     return process_static_routes(
@@ -212,6 +220,8 @@ def create_fn(name, body, spec, logger, **_):
 def update_fn(name, body, old, new, logger, **_):
     old_gateway = old["spec"].get("gateway", None)
     new_gateway = new["spec"].get("gateway", None)
+    old_interface = old["spec"].get("interface", None)
+    new_interface = new["spec"].get("interface", None)
     old_selector = old["spec"].get("nodeSelector", None)
     new_selector = new["spec"].get("nodeSelector", None)
     old_multipath = old["spec"].get("multipath", None)
@@ -222,7 +232,7 @@ def update_fn(name, body, old, new, logger, **_):
     destinations_to_add = list(set(new_destinations) - set(old_destinations))
 
     routes_to_delete_spec = [
-        {"destination": destination, "gateway": old_gateway, "multipath": old_multipath, "selector": old_selector}
+        {"destination": destination, "gateway": old_gateway, "interface": old_interface, "multipath": old_multipath, "selector": old_selector}
         for destination in destinations_to_delete
     ]
 
@@ -231,7 +241,7 @@ def update_fn(name, body, old, new, logger, **_):
     )
 
     routes_to_add_spec = [
-        {"destination": destination, "gateway": new_gateway, "multipath": new_multipath, "selector": new_selector}
+        {"destination": destination, "gateway": new_gateway, "interface": new_interface, "multipath": new_multipath, "selector": new_selector}
         for destination in destinations_to_add
     ]
 
@@ -251,10 +261,11 @@ def update_fn(name, body, old, new, logger, **_):
 def delete(name, body, spec, logger, **_):
     destinations = spec.get("destinations", [])
     gateway = spec.get("gateway", None)
+    interface = spec.get("interface", None)
     selector = spec.get("nodeSelector", None)
     multipath= spec.get("multipath", None)
     routes_to_delete_spec = [
-        {"destination": destination, "gateway": gateway, "multipath": multipath, "selector":selector} for destination in destinations
+        {"destination": destination, "gateway": gateway, "interface": interface, "multipath": multipath, "selector":selector} for destination in destinations
     ]
 
     return process_static_routes(

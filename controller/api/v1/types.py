@@ -42,6 +42,13 @@ class StaticRoute(OpenAPIV3Schema):
             "description": "Gateway to route through",
             "jsonPath": ".spec.gateway",
         },
+                {
+            "name": "Interface",
+            "type": "string",
+            "priority": 1,
+            "description": "Interface to route through",
+            "jsonPath": ".spec.interface",
+        },
         {
             "name": "Multipath",
             "type": "string",
@@ -74,6 +81,12 @@ class StaticRoute(OpenAPIV3Schema):
             pattern="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
         )
     )
+    interface: str = field(
+        metadata=schema(
+            description="Interface to route through",
+            pattern="^[a-zA-Z0-9-_.]+$"
+        )
+    )
 
     IpAddress = NewType("IpAddress", str)
     schema(
@@ -81,7 +94,7 @@ class StaticRoute(OpenAPIV3Schema):
     )(IpAddress)
 
     multipath: list[IpAddress] = field(
-        
+
     )
 
     nodeSelector: NodeSelector = field(metadata=schema(

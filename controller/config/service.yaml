@@ -12,10 +12,11 @@ spec:
       labels:
         name: k8s-staticroute-operator-service
     spec:
+      volumes:
+          - emptyDir: {}
+            name: routes-db-pvc
       tolerations:
         - operator: Exists
-      imagePullSecrets:
-        - name: <PULL_SECRET_NAME>
       containers:
         - name: k8s-staticroute-operator-service
           image: <CONTAINER_REGISTRY>/k8s-staticroute-operator:<OPERATOR_RELEASE>
@@ -32,16 +33,6 @@ spec:
           volumeMounts:
             - mountPath: "/db"
               name: routes-db-pvc
-  volumeClaimTemplates:
-  - metadata:
-      name: routes-db-pvc
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 1Gi
-      storageClassName: do-block-storage
 ---
 apiVersion: v1
 kind: Service

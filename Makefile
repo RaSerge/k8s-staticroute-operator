@@ -79,9 +79,9 @@ release: manifests ## Create release artifacts for the project.
 	@echo "Generating new release manifests for project version $(PROJECT_VERSION) ..."
 	@$(MKDIR_CMD) -p $(RELEASES_FOLDER)/v$(PROJECT_MAJOR_VERSION)
 	@$(KUBECTL_CMD) kustomize $(CONTROLLER_PATH) > $(OPERATOR_RELEASE_MANIFEST)
-	@$(SED_CMD) -i '' 's/<OPERATOR_RELEASE>/v$(PROJECT_VERSION)/g' $(OPERATOR_RELEASE_MANIFEST)
-	@$(SED_CMD) -i '' 's/<CONTAINER_REGISTRY>/$(CONTAINER_REGISTRY)/g' $(OPERATOR_RELEASE_MANIFEST)
-	@$(SED_CMD) -i '' 's/<PULL_SECRET_NAME>/$(PULL_SECRET_NAME)/g' $(OPERATOR_RELEASE_MANIFEST)
+	@$(SED_CMD) -i 's/<OPERATOR_RELEASE>/v$(PROJECT_VERSION)/g' $(OPERATOR_RELEASE_MANIFEST)
+	@$(SED_CMD) -i 's/<CONTAINER_REGISTRY>/$(CONTAINER_REGISTRY)/g' $(OPERATOR_RELEASE_MANIFEST)
+	@$(SED_CMD) -i 's/<PULL_SECRET_NAME>/$(PULL_SECRET_NAME)/g' $(OPERATOR_RELEASE_MANIFEST)
 
 .PHONY: docker-image
 docker-image: release ## Build controller Docker image for the project.

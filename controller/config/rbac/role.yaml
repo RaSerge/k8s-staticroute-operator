@@ -8,7 +8,7 @@ rules:
   - apiGroups: [networking.digitalocean.com]
     resources: [clusterkopfpeerings]
     verbs: [list, watch, patch, get]
-    
+
   # Framework: runtime observation of namespaces & CRDs (addition/deletion).
   - apiGroups: [apiextensions.k8s.io]
     resources: [customresourcedefinitions]

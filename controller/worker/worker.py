@@ -37,6 +37,7 @@ def get_routes(api_url,token,node):
                     {
                         "destination":item["destination"],
                         "gateway":item["gateway"],
+                        "interface": item["interface"],
                         "multipath":item["multipath"]
                     }
                 )
@@ -47,11 +48,11 @@ def get_routes(api_url,token,node):
     final_result = sorted(data, key=lambda d: d['destination'])
     return final_result, error
 
-def manage_static_route(operation, destination, gateway=None, multipath=None):
+def manage_static_route(operation, destination, gateway=None, interface=None, multipath=None):
     operation_success = False
     is_multipath = False
     message = ""
-    
+
     if isinstance(multipath, list):
         is_multipath = True
 
@@ -93,18 +94,38 @@ def manage_static_route(operation, destination, gateway=None, multipath=None):
 
     with IPRoute() as ipr:
         try:
+            route_args = {
+                'dst': destination,
+                'table': 60  # Keep existing table setting
+            }
             if is_multipath:
+                if interface:
+                    raise ValueError("Multipath not supported with interface routes")
                 multipath_arr = []
                 for gw in multipath:
                     if isinstance(gw, dict):
                         multipath_arr.append({"gateway":gw["gateway"],"hops":gw["hops"]})
                     else:
                         multipath_arr.append({"gateway":gw})
-                ipr.route(operation, dst=destination, multipath=multipath_arr, table=60)    
-            else:
-                ipr.route(operation, dst=destination, gateway=gateway, table=60)
+                route_args['multipath'] = multipath_arr
+            elif gateway:
+                if interface:
+                    raise ValueError("Gateway not supported with interface routes")
+                route_args['gateway'] = gateway
+            elif interface:
+                ifindex = ipr.link_lookup(ifname=interface)
+                if not ifindex:
+                    message = f"Interface {interface} not found"
+                    if logging is not None:
+                        logging.error(message)
+                    return (False, message)
+                route_args['oif'] = ifindex[0]
+
+            ipr.route(operation, **route_args)
+
             operation_success = True
-            message = f"Success - Dest: {destination}, gateway: {gateway}, multipath: {multipath}, operation: {operation}."
+            route_via = f"interface {interface}" if interface else f"gateway {gateway}" if gateway else f"multipath {multipath}"
+            message = f"Success - Dest: {destination}, via: {route_via}, operation: {operation}."
             if logging is not None:
                 logging.info(message)
         except Exception as ex:
@@ -116,39 +137,72 @@ def manage_static_route(operation, destination, gateway=None, multipath=None):
     return (operation_success, message)
 
 def get_routing_status():
-    with IPRoute() as ipr:
-        try:
-            result_routes = []
-            routes = ipr.get_routes(family=AF_INET,table=60)
-            for route in routes:
-                #print(route)
-                multipath = None
+    """Retrieve current routing table entries from table 60.
+
+    Returns:
+        list: Sorted list of route dictionaries with keys:
+              - destination (str): Route destination CIDR
+              - gateway (str): Next-hop gateway IP (optional)
+              - interface (str): Output interface name (optional)
+              - multipath (list): List of multipath gateways (optional)
+    """
+    result_routes = []
+
+    try:
+        with IPRoute() as ipr:
+            # Get all interface names for index-to-name mapping
+            links = {idx: attr['IFLA_IFNAME']
+                    for idx, attr in dict(ipr.get_links()).items()}
+
+            for route in ipr.get_routes(family=AF_INET, table=60):
+                route_info = {
+                    'destination': None,
+                    'gateway': None,
+                    'interface': None,
+                    'multipath': None
+                }
+
+                # Handle destination
+                if 'dst_len' in route:
+                    dst = route.get_attr('RTA_DST')
+                    if dst:
+                        route_info['destination'] = (
+                            dst if route['dst_len'] == 32
+                            else f"{dst}/{route['dst_len']}"
+                        )
+
+                # Handle multipath routes
                 if route.get_attr('RTA_MULTIPATH'):
-                    multipath = []
-                    for path in route.get_attr('RTA_MULTIPATH'):
-                        multipath.append(path.get_attr('RTA_GATEWAY'))
-                if multipath is not None:
-                    multipath.sort()
-                append = True
-                if "dst_len" in route:
-                    if route["dst_len"] == 32:
-                        dst = route.get_attr('RTA_DST')
-                    else:
-                        dst = f"{route.get_attr('RTA_DST')}/{route['dst_len']}"
-                gateway = route.get_attr('RTA_GATEWAY')
-                if dst is None:
-                    append = False
-                if (multipath is None) and (gateway is None):
-                    append = False
-                if append:
-                    result_routes.append({"destination":dst, "gateway": gateway, "multipath": multipath})
-            if len(result_routes) > 1:
-                final_result = sorted(result_routes, key=lambda d: d['destination'])
-            else:
-                final_result = result_routes
-            return final_result               
-        except Exception as ex:
-            print(f"Error message: {ex}")
+                    route_info['multipath'] = sorted(
+                        path.get_attr('RTA_GATEWAY')
+                        for path in route.get_attr('RTA_MULTIPATH')
+                        if path.get_attr('RTA_GATEWAY')
+                    )
+
+                # Handle single gateway or interface routes
+                if not route_info['multipath']:
+                    route_info['gateway'] = route.get_attr('RTA_GATEWAY')
+                    oif = route.get_attr('RTA_OIF')
+                    if oif and oif in links:
+                        route_info['interface'] = links[oif]
+
+                # Only include valid routes with destination
+                if route_info['destination'] and (
+                    route_info['gateway'] or
+                    route_info['interface'] or
+                    route_info['multipath']
+                ):
+                    # Remove None values from the dict
+                    result_routes.append(
+                        {k: v for k, v in route_info.items() if v is not None}
+                    )
+
+            # Sort routes by destination
+            return sorted(result_routes, key=lambda x: x['destination'])
+
+    except Exception as ex:
+        logging.error(f"Failed to get routing status: {str(ex)}")
+        raise  # Re-raise to let caller handle the error
 
 def list_remove(left,right):
     result_list=[]
@@ -165,8 +219,8 @@ def keep_reachable(routes):
                         delay=ping(gw)
                         logging.info(f"GW {gw} reachable with delay:{delay}")
                     except:
-                        logging.info(f"GW {gw} NOT RECHABLE")                
-    
+                        logging.info(f"GW {gw} NOT RECHABLE")
+
 def main():
     while True:
         desired, errors=get_routes(api_url=api_url,token=token,node=node_name)
@@ -179,9 +233,9 @@ def main():
             logging.info(f"[{node_name}] - Routes to delete: {routes_to_del}")
             logging.info(f"[{node_name}] - Routes to add: {routes_to_add}")
             for route in routes_to_del:
-                manage_static_route(operation="del",destination=route["destination"],gateway=route["gateway"],multipath=route["multipath"])
+                manage_static_route(operation="del",destination=route["destination"],gateway=route["gateway"],interface=route["interface"],multipath=route["multipath"])
             for route in routes_to_add:
-                manage_static_route(operation="add",destination=route["destination"],gateway=route["gateway"],multipath=route["multipath"])
+                manage_static_route(operation="add",destination=route["destination"],gateway=route["gateway"],interface=route["interface"],multipath=route["multipath"])
         else:
             logging.info(f"[{node_name}] - Unable to reach the API, Keeping the last known state")
         time.sleep(30)
