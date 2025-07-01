@@ -1,0 +1,8 @@
+apiVersion: networking.digitalocean.com/v1
+kind: StaticRoute
+metadata:
+  name: static-route-ifconfig.me
+spec:
+  destinations:
+    - "10.20.30.40"
+  interface: "bond0"
